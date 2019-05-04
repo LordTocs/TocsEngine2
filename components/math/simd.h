@@ -10,6 +10,11 @@
 
 namespace tocs {
 namespace math {
+
+class simd_enabled {};
+
+class simd_disabled {};
+
 namespace detail {
 
 template <class>
@@ -20,36 +25,49 @@ template <>
 struct is_simd_type<float> : public std::true_type
 {};
 
-template <>
-struct is_simd_type<int> : public std::true_type
-{};
-
-template <class T, int i>
-class scalar_simd_vector_accessor
-{
-	//http://codrspace.com/t0rakka/simd-scalar-accessor/
-
-	detail::simd_pack<T> pack;
-public:
-	scalar_simd_vector_accessor<T, i> &operator=  (T value)
-	{
-		pack = detail::simd_pack<T>::set<i>(pack, value);
-	}
-
-	operator T() const
-	{
-		return detail::simd_pack<T>::get<i>(pack);
-	}
-
-
-};
+//template <>
+//struct is_simd_type<int> : public std::true_type
+//{};
 
 
 template <class T>
 using enable_if_simd_type = std::enable_if<is_simd_type<T>::value>;
 
 template <class T>
-class simd_pack {};
+class simd_pack
+{
+	inline static simd_pack<T> VECTORCALL add(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL h_add(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL sub(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL c_mul(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL c_div(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL c_less(simd_pack<T> a, simd_pack<T> b);
+
+	inline static simd_pack<T> VECTORCALL blend(simd_pack<T> a, simd_pack<T> b, simd_pack<T> mask);
+
+	template <int xi, int yi, int zi, int wi>
+	inline static simd_pack<T> VECTORCALL swizzle(simd_pack<T> a);
+
+	template <int xi, int yi, int zi, int wi>
+	inline static simd_pack<T> VECTORCALL shuffle(simd_pack<T> a, simd_pack<T> b);
+
+	template <unsigned int shufflebytes>
+	inline static simd_pack<T> VECTORCALL raw_shuffle(simd_pack<T> a, simd_pack<T> b);
+
+	template <int i>
+	inline static simd_pack<T> VECTORCALL set(simd_pack<T> a, T v);
+
+	template <int i>
+	inline static T VECTORCALL get(simd_pack<T> a);
+
+	template<bool xf, bool yf, bool zf, bool wf>
+	inline static simd_pack<T> VECTORCALL dot(simd_pack<T> a, simd_pack<T> b);
+};
 
 template <>
 class alignas(16) simd_pack<float>
@@ -77,34 +95,34 @@ public:
 
 	}
 
-	inline static simd_pack<float> VECTORCALL add(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL add(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_add_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_add_ps(pack, rhs.pack));
 	}
 
-	inline static simd_pack<float> VECTORCALL h_add(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL h_add(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_hadd_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_hadd_ps(pack, rhs.pack));
 	}
 
-	inline static simd_pack<float> VECTORCALL sub(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL sub(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_sub_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_sub_ps(pack, rhs.pack));
 	}
 
-	inline static simd_pack<float> VECTORCALL c_mul(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL c_mul(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_mul_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_mul_ps(pack, rhs.pack));
 	}
 
-	inline static simd_pack<float> VECTORCALL c_div(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL c_div(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_div_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_div_ps(pack, rhs.pack));
 	}
 
-	inline static simd_pack<float> VECTORCALL c_less(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL c_less(simd_pack<float> rhs)
 	{
-		return simd_pack<float>(_mm_cmplt_ps(a.pack, b.pack));
+		return simd_pack<float>(_mm_cmplt_ps(pack, rhs.pack));
 	}
 
 	inline static simd_pack<float> VECTORCALL blend(simd_pack<float> a, simd_pack<float> b, simd_pack<float> mask)
@@ -113,9 +131,9 @@ public:
 	}
 
 	template <int xi, int yi, int zi, int wi>
-	inline static simd_pack<float> VECTORCALL swizzle(simd_pack<float> a)
+	inline simd_pack<float> VECTORCALL swizzle()
 	{
-		return simd_pack<float>(_mm_shuffle_ps(a.pack, a.pack, _MM_SHUFFLE(xi, yi, zi, wi));
+		return simd_pack<float>(_mm_shuffle_ps(pack, pack, _MM_SHUFFLE(xi, yi, zi, wi)));
 	}
 
 	template <int xi, int yi, int zi, int wi>
@@ -131,28 +149,46 @@ public:
 	}
 
 	template <int i>
-	inline static simd_pack<float> VECTORCALL set(simd_pack<float> a, float v)
+	inline simd_pack<float> VECTORCALL set(float v)
 	{
 		//assume sse 4.1
-		return simd_pack<float>(_mm_insert_ps(a.pack, _mm_set_ss(v), i * 16));
+		return simd_pack<float>(_mm_insert_ps(pack, _mm_set_ss(v), i * 16));
 	}
 
 	template <int i>
-	inline static float VECTORCALL get(simd_pack<float> a)
+	inline float VECTORCALL get()
 	{
-		return _mm_cvtss_f32(swizzle<i, i, i, i>(a.pack));
+		return _mm_cvtss_f32(swizzle<i, i, i, i>(pack));
 	}
 
 	template<>
-	inline static float VECTORCALL get<0>(simd_pack<float> a)
+	inline static float VECTORCALL get<0>()
 	{
-		return _mm_cvtss_f32(a.pack);
+		return _mm_cvtss_f32(pack);
 	}
 
 	template<bool xf, bool yf, bool zf, bool wf>
-	inline static simd_pack<float> VECTORCALL dot(simd_pack<float> a, simd_pack<float> b)
+	inline simd_pack<float> VECTORCALL dot(simd_pack<float> rhs)
 	{
-		return _mm_dp_ps(a, b, xf * 0x11 | yf * 0x22 | zf * 0x33 | wf * 0x44);
+		return _mm_dp_ps(pack, rhs.pack, xf * 0x11 | yf * 0x22 | zf * 0x33 | wf * 0x44);
+	}
+};
+
+template <class T, int i>
+class scalar_simd_vector_accessor
+{
+	//http://codrspace.com/t0rakka/simd-scalar-accessor/
+
+	detail::simd_pack<T> pack;
+public:
+	scalar_simd_vector_accessor<T, i> &operator=  (T value)
+	{
+		pack = detail::simd_pack<T>::set<i>(pack, value);
+	}
+
+	operator T() const
+	{
+		return detail::simd_pack<T>::get<i>(pack);
 	}
 };
 

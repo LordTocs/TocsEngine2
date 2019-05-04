@@ -9,8 +9,23 @@
 namespace tocs {
 namespace math {
 
+namespace detail
+{
+
 template <class T>
+using default_simd_quaternion_toggle = detail::default_simd_vector_toggle<T, 4>;
+
+}
+
+template <class T, class simd_toggle = typename detail::default_simd_quaternion_toggle<T>>
 class quaternion_base
+{
+
+};
+
+
+template <class T>
+class quaternion_base<T, simd_enabled>
 {
 public:
 	static_assert(std::is_floating_point<T>::value, "Quaternions only work with floating point types.");
@@ -44,18 +59,18 @@ public:
 		detail::simd_pack<T> t;
 
 		{
-			detail::simd_pack<T> two(2, 2, 2, 0);
+			const static detail::simd_pack<T> two(2, 2, 2, 0);
 
-			auto a = detail::simd_pack<T>::swizzle<1, 2, 0, 0>(simd);
-			auto b = detail::simd_pack<T>::swizzle<2, 0, 1, 0>(vec.simd);
+			auto a = simd.swizzle<1, 2, 0, 0>();
+			auto b = vec.simd.swizzle<2, 0, 1, 0>();
 
-			auto c = detail::simd_pack<T>::swizzle<1, 2, 0, 0>(vec.simd);
-			auto d = detail::simd_pack<T>::swizzle<2, 0, 1, 0>(simd);
+			auto c = vec.simd.swizzle<1, 2, 0, 0>();
+			auto d = simd.swizzle<2, 0, 1, 0>();
 
-			auto ab = detail::simd_pack<T>::c_mul(a, b);
-			auto cd = detail::simd_pack<T>::c_mul(c, d);
+			auto ab = a.c_mul(b);
+			auto cd = c.c_mul(d);
 
-			t = detail::simd_pack<T>::c_mul(two, detail::simd_pack<T>::sub(ab, cd));
+			t = two.c_mul(two, ab.sub(cd));
 		}
 
 		vector_base<T, 3> v_prime;
@@ -66,19 +81,19 @@ public:
 
 			detail::simd_pack<T> cross;
 			{
-				auto a = detail::simd_pack<T>::swizzle<1, 2, 0, 0>(simd);
-				auto b = detail::simd_pack<T>::swizzle<2, 0, 1, 0>(t);
+				auto a = simd.swizzle<1, 2, 0, 0>();
+				auto b = t.swizzle<2, 0, 1, 0>();
 
-				auto c = detail::simd_pack<T>::swizzle<1, 2, 0, 0>(t);
-				auto d = detail::simd_pack<T>::swizzle<2, 0, 1, 0>(simd);
+				auto c = t.swizzle<1, 2, 0, 0>();
+				auto d = simd.swizzle<2, 0, 1, 0>();
 
-				auto ab = detail::simd_pack<T>::c_mul(a, b);
-				auto cd = detail::simd_pack<T>::c_mul(c, d);
+				auto ab = a.c_mul(b);
+				auto cd = c.c_mul(d);
 
-				cross = detail::simd_pack<T>::sub(ab, cd);
+				cross = ab.sub(cd);
 			}
 
-			v_prime.simd = detail::simd_pack<T>::add(vec.simd, detail::simd_pack<T>::add(qwt, cross));
+			v_prime.simd = vec.simd.add(qwt.add(cross));
 		}
 
 		return v_prime;
@@ -86,43 +101,46 @@ public:
 
 	quaternion_base<T> VECTORCALL conjugate() const
 	{
-		return detail::simd_pack<T>::c_mul(simd, detail::simd_pack<T>(-1, -1, -1, 1));
+		static detail::simd_pack<T> conjugator(-1, -1, -1, 1);
+		return simd.c_mul(conjugator);
 	}
 
 	quaternion_base<T> VECTORCALL inverse() const
 	{
 		auto conj = conjugate();
-		auto mag_sqr = detail::simd_pack<T>::dot<true, true, true, true>(simd, simd);
+		auto mag_sqr = simd.dot<true, true, true, true>(simd);
 		
-		return detail::simd_pack<T>::c_div(conj, mag_sqr);
+		return conj.c_div(mag_sqr);
 	}
 
-	quaternion_base<T> VECTORCALL operator*(quaternion_base<T> op2)
+	quaternion_base<T> VECTORCALL operator*(quaternion_base<T> rhs)
 	{
 		//X = W * op2.X + X * op2.W + Y * op2.Z - Z * op2.Y;
 		//Y = W * op2.Y + Y * op2.W + Z * op2.X - X * op2.Z;
 		//Z = W * op2.Z + Z * op2.W + X * op2.Y - Y * op2.X;
 		//W = W * op2.W - X * op2.X - Y * op2.Y - Z * op2.Z;
 
-		auto a1 = detail::simd_pack<T>::swizzle<3, 3, 3, 3>(simd);
-		auto a2 = detail::simd_pack<T>::swizzle<0, 1, 2, 0>(op2.simd);
-		auto a = detail::simd_pack<T>::c_mul(a1, a2);
+		auto a1 = simd.swizzle<3, 3, 3, 3>();
+		auto a2 = rhs.simd.swizzle<0, 1, 2, 0>();
+		auto a = a1.c_mul(a2);
 
-		auto b1 = detail::simd_pack<T>::swizzle<0, 1, 2, 0>(simd);
-		b1 = detail::simd_pack<T>::c_mul(b1, detail::simd_pack<T>(1, 1, 1, -1));
-		auto b2 = detail::simd_pack<T>::swizzle<3, 3, 3, 0>(op2.simd);
-		auto b = detail::simd_pack<T>::c_mul(b1, b2);
+		const static detail::simd_pack<T> sign_flipper (1, 1, 1, -1);
+
+		auto b1 = simd.swizzle<0, 1, 2, 0>();
+		b1 = b1.c_mul(sign_flipper);
+		auto b2 = rhs.simd.swizzle<3, 3, 3, 0>();
+		auto b = b1.c_mul(b2);
 
 		auto c1 = detail::simd_pack<T>::swizzle<1, 2, 0, 1>(simd);
-		c1 = detail::simd_pack<T>::c_mul(c1, detail::simd_pack<T>(1, 1, 1, -1));
-		auto c2 = detail::simd_pack<T>::swizzle<2, 0, 1, 1>(op2.simd);
-		auto c = detail::simd_pack<T>::c_mul(c1, c2);
+		c1 = c1.c_mul(sign_flipper);
+		auto c2 = rhs.simd.swizzle<2, 0, 1, 1>();
+		auto c = c1.c_mul(c2);
 
-		auto d1 = detail::simd_pack<T>::swizzle<2, 0, 1, 2>(simd);
-		auto d2 = detail::simd_pack<T>::swizzle<1, 2, 0, 2>(op2.simd);
-		auto d = detail::simd_pack<T>::c_mul(d1, d2);
+		auto d1 = simd.swizzle<2, 0, 1, 2>();
+		auto d2 = rhs.simd.swizzle<1, 2, 0, 2>();
+		auto d = d1.c_mul(d2);
 
-		return detail::simd_pack<T>::add(a, detail::simd_pack<T>::add(b, detail::simd_pack<T>::sub(c, d)));
+		return a.add(b.add(c.sub(d)));
 	}
 
 	static quaternion_base<T> VECTORCALL slerp(quaternion_base<T> from, quaternion_base<T> to, T t)

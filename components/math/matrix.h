@@ -8,7 +8,7 @@
 namespace tocs {
 namespace math {
 
-template <class T, int rows, int cols>
+template <class T, int rows, int cols, class simd_toggle=simd_disabled>
 class matrix
 {
 public:
@@ -23,26 +23,26 @@ namespace detail
 	//https://lxjk.github.io/2017/09/03/Fast-4x4-Matrix-Inverse-with-SSE-SIMD-Explained.html#_appendix
 
 	template<class T>
-	inline simd_pack<T> VECTORCALL Mat2Mul(simd_pack<T> vec1, simd_pack<T> vec2)
+	inline simd_pack<T> VECTORCALL mat2_mul(simd_pack<T> vec1, simd_pack<T> vec2)
 	{
-		return simd_pack<T>::add(simd_pack<T>::c_mul(vec1, simd_pack<T>::swizzle<0, 3, 0, 3>(vec2)), simd_pack<T>::c_mul(simd_pack<T>::swizzle<1, 0, 3, 2>(vec1), simd_pack<T>::swizzle<2, 1, 2, 1>(vec2)));
+		return vec1.c_mul(vec2.swizzle<0, 3, 0, 3>()).add(vec1.swizzle<1, 0, 3, 2>().c_mul(vec2.swizzle<2, 1, 2, 1>()));
 	}
 
 	template<class T>
-	inline simd_pack<T> VECTORCALL Mat2AdjMul(simd_pack<T> vec1, simd_pack<T> vec2)
+	inline simd_pack<T> VECTORCALL mat2_adj_mul(simd_pack<T> vec1, simd_pack<T> vec2)
 	{
-		return simd_pack<T>::add(simd_pack<T>::c_mul(simd_pack<T>::swizzle<3, 3, 0, 0>(vec1), vec2), simd_pack<T>::c_mul(simd_pack<T>::swizzle<1, 1, 2, 2>(vec1), simd_pack<T>::swizzle<2, 3, 0, 1>(vec2)));
+		return vec1.swizzle<3, 3, 0, 0>().c_mul(vec2).add(vec1.swizzle<1, 1, 2, 2>().c_mul(vec2.swizzle<2, 3, 0, 1>()));
 	}
 
 	template<class T>
-	inline simd_pack<T> VECTORCALL Mat2MulAdj(simd_pack<T> vec1, simd_pack<T> vec2)
+	inline simd_pack<T> VECTORCALL mat2_mul_adj(simd_pack<T> vec1, simd_pack<T> vec2)
 	{
-		return simd_pack<T>::add(simd_pack<T>::c_mul(vec1, simd_pack<T>::swizzle<3, 0, 3, 0>(vec2)), simd_pack<T>::c_mul(simd_pack<T>::swizzle<1, 0, 3, 2>(vec1), simd_pack<T>::swizzle<2, 1, 2, 1>(vec2)));
+		return vec1.c_mul(vec2.swizzle<3, 0, 3, 0>()).add(vec1.swizzle<1, 0, 3, 2>().c_mul(vec2.swizzle<2, 1, 2, 1>()));
 	}
 }
 
 template <class T>
-class matrix<T, 4, 4>
+class matrix<T, 4, 4, simd_enabled>
 {
 public:
 	union
@@ -59,15 +59,15 @@ public:
 		matrix<T, 4, 4> result;
 		simd_pack<T> t0, t1, t2, t3;
 
-		t0 = simd_pack<T>::raw_shuffle<0x44>(rows[0].simd, rows[1].simd);
-		t1 = simd_pack<T>::raw_shuffle<0xEE>(rows[0].simd, rows[1].simd);
-		t2 = simd_pack<T>::raw_shuffle<0x44>(rows[2].simd, rows[3].simd);
-		t3 = simd_pack<T>::raw_shuffle<0xEE>(rows[2].simd, rows[3].simd);
+		t0 = simd_pack<T>::template raw_shuffle<0x44>(rows[0].simd, rows[1].simd);
+		t1 = simd_pack<T>::template raw_shuffle<0xEE>(rows[0].simd, rows[1].simd);
+		t2 = simd_pack<T>::template raw_shuffle<0x44>(rows[2].simd, rows[3].simd);
+		t3 = simd_pack<T>::template raw_shuffle<0xEE>(rows[2].simd, rows[3].simd);
 
-		result.rows[0].simd = simd_pack<T>::raw_shuffle<0x88>(t0, t1);
-		result.rows[1].simd = simd_pack<T>::raw_shuffle<0xDD>(t0, t1);
-		result.rows[2].simd = simd_pack<T>::raw_shuffle<0x88>(t2, t3);
-		result.rows[3].simd = simd_pack<T>::raw_shuffle<0xDD>(t2, t3);
+		result.rows[0].simd = simd_pack<T>::template raw_shuffle<0x88>(t0, t1);
+		result.rows[1].simd = simd_pack<T>::template raw_shuffle<0xDD>(t0, t1);
+		result.rows[2].simd = simd_pack<T>::template raw_shuffle<0x88>(t2, t3);
+		result.rows[3].simd = simd_pack<T>::template raw_shuffle<0xDD>(t2, t3);
 	
 		return result;
 	}
@@ -98,53 +98,53 @@ public:
 		//Todo check major-ness
 		//https://lxjk.github.io/2017/09/03/Fast-4x4-Matrix-Inverse-with-SSE-SIMD-Explained.html
 
-		simd_pack<T> a = simd_pack<T>::shuffle<0, 1, 0, 1>(rows[0].simd, row[1].simd);
-		simd_pack<T> b = simd_pack<T>::shuffle<2, 3, 2, 3>(rows[0].simd, row[1].simd);
-		simd_pack<T> c = simd_pack<T>::shuffle<0, 1, 0, 1>(rows[2].simd, row[3].simd);
-		simd_pack<T> d = simd_pack<T>::shuffle<2, 3, 2, 3>(rows[3].simd, row[3].simd);
+		auto a = simd_pack<T>::template shuffle<0, 1, 0, 1>(rows[0].simd, row[1].simd);
+		auto b = simd_pack<T>::template shuffle<2, 3, 2, 3>(rows[0].simd, row[1].simd);
+		auto c = simd_pack<T>::template shuffle<0, 1, 0, 1>(rows[2].simd, row[3].simd);
+		auto d = simd_pack<T>::template shuffle<2, 3, 2, 3>(rows[3].simd, row[3].simd);
 
-		simd_pack<T> det_a = simd_pack<T>(rows[0].x * rows[1].y - rows[0].y * rows[1].x);
-		simd_pack<T> det_b = simd_pack<T>(rows[0].z * rows[1].w - rows[0].w * rows[1].z);
-		simd_pack<T> det_c = simd_pack<T>(rows[2].x * rows[3].y - rows[2].y * rows[3].x);
-		simd_pack<T> det_d = simd_pack<T>(rows[2].z * rows[3].w - rows[2].w * rows[3].z);
+		auto det_a = simd_pack<T>(rows[0].x * rows[1].y - rows[0].y * rows[1].x);
+		auto det_b = simd_pack<T>(rows[0].z * rows[1].w - rows[0].w * rows[1].z);
+		auto det_c = simd_pack<T>(rows[2].x * rows[3].y - rows[2].y * rows[3].x);
+		auto det_d = simd_pack<T>(rows[2].z * rows[3].w - rows[2].w * rows[3].z);
 
-		simd_pack<T> d_c = detail::Mat2AdjMul(d, c);
+		auto d_c = detail::mat2_adj_mul(d, c);
 
-		simd_pack<T> a_b = detail::Mat2AdjMul(a, b);
+		auto a_b = detail::mat2_adj_mul(a, b);
 
-		simd_pack<T> x = simd_pack<T>::sub(simd_pack<T>::c_mul(det_d, a), detail::Mat2Mul(b, d_c));
+		auto x = det_d.c_mul(a).sub(detail::mat2_mul(b, d_c));
 
-		simd_pack<T> w = simd_pack<T>::sub(simd_pack<T>::c_mul(det_c, d), detail::Mat2Mul(c, a_b));
+		auto w = det_c.c_mul(d).sub(detail::mat2_mul(c, a_b));
 
-		simd_pack<T> det_m = simd_pack<T>::c_mul(det_a, det_d);
+		auto det_m = det_a.c_mul(det_d);
 
-		simd_pack<T> y = simd_pack<T>::sub(simd_pack<T>::c_mul(det_b, c), detail::Mat2MulAdj(d, a_b));
+		auto y = det_b.c_mul(c).sub(detail::mat2_mul_adj(d, a_b));
 
-		simd_pack<T> z = simd_pack<T>::sub(simd_pack<T>::c_mul(det_c, b), detail::Mat2MulAdj(a, d_c));
+		auto z = det_c.c_mul(b).sub(detail::mat2_mul_adj(a, d_c));
 
-		det_m = simd_pack<T>::add(det_m, simd_pack<T>::c_mul(det_b, det_c));
+		det_m = det_m.add(det_b.c_mul(det_c));
 
-		simd_pack<T> tr = simd_pack<T>::c_mul(a_b, simd_pack<T>::swizzle<0, 2, 1, 3>(d_c));
-		tr = simd_pack<T>::h_add(tr, tr);
-		tr = simd_pack<T>::h_add(tr, tr);
+		auto tr = a_b.c_mul(d_c.swizzle<0, 2, 1, 3>());
+		tr = tr.h_add(tr);
+		tr = tr.h_add(tr);
 
-		det_m = simd_pack<T>::sub(det_m, tr);
+		det_m = det_m.sub(tr);
 
 		const static simd_pack<T> adj_sign_mask(1.f, -1.f, -1.f, 1.f);
 
-		simd_pack<T> r_det_m = simd_pack<T>::div(adj_sign_mask, det_m);
+		auto r_det_m = adj_sign_mask.div(det_m);
 
-		x = simd_pack<T>::c_mul(x, r_det_m);
-		y = simd_pack<T>::c_mul(y, r_det_m);
-		z = simd_pack<T>::c_mul(z, r_det_m);
-		w = simd_pack<T>::c_mul(w, r_det_m);
+		x = x.c_mul(r_det_m);
+		y = y.c_mul(r_det_m);
+		z = z.c_mul(r_det_m);
+		w = w.c_mul(r_det_m);
 
 		matrix<T, 4, 4> result;
 
-		result.rows[0].simd = simd_pack<T>::shuffle<3, 1, 3, 1>(x, y);
-		result.rows[1].simd = simd_pack<T>::shuffle<2, 0, 2, 0>(x, y);
-		result.rows[2].simd = simd_pack<T>::shuffle<3, 1, 3, 1>(z, w);
-		result.rows[3].simd = simd_pack<T>::shuffle<2, 0, 2, 0>(z, w);
+		result.rows[0].simd = simd_pack<T>::template shuffle<3, 1, 3, 1>(x, y);
+		result.rows[1].simd = simd_pack<T>::template shuffle<2, 0, 2, 0>(x, y);
+		result.rows[2].simd = simd_pack<T>::template shuffle<3, 1, 3, 1>(z, w);
+		result.rows[3].simd = simd_pack<T>::template shuffle<2, 0, 2, 0>(z, w);
 
 		return result;
 	}
@@ -168,11 +168,11 @@ public:
 		sizeSqr = simd_pack<T>::add(sizeSqr, simd_pack<T>::c_mul(result.rows[1].simd, result.rows[1].simd));
 		sizeSqr = simd_pack<T>::add(sizeSqr, simd_pack<T>::c_mul(result.rows[2].simd, result.rows[2].simd));
 
-		static simd_pack<T> one(1);
-		static simd_pack<T> epislon(std::numeric_limits<T>::epsilon());
+		const static simd_pack<T> one(1);
+		const static simd_pack<T> epislon(std::numeric_limits<T>::epsilon());
 
 		//avoid div by zero
-		simd_pack<T> rSizeSqr = simd_pack<T>::blend(simd_pack<T>::c_div(one, sizeSqr), one, simd_pack<T>::c_less(sizeSqr, epislon));
+		auto rSizeSqr = simd_pack<T>::blend(simd_pack<T>::c_div(one, sizeSqr), one, simd_pack<T>::c_less(sizeSqr, epislon));
 
 		result.rows[0].simd = simd_pack<T>::c_mul(result.rows[0].simd, rSizeSqr);
 		result.rows[1].simd = simd_pack<T>::c_mul(result.rows[1].simd, rSizeSqr);
@@ -211,10 +211,10 @@ matrix<T, 4, 4> VECTORCALL operator* (matrix<T, 4, 4> op1, matrix<T, 4, 4> op2)
 		simd_pack<T> brodcast2 = op1.rows[i].simd.swizzle<2, 2, 2, 2>();
 		simd_pack<T> brodcast3 = op1.rows[i].simd.swizzle<3, 3, 3, 3>();
 
-		auto a = simd_pack<T>::add(simd_pack<T>::c_mul(brodcast0, op2.rows[0].simd), simd_pack<T>::c_mul(brodcast1, op2.rows[1].simd));
-		auto b = simd_pack<T>::add(simd_pack<T>::c_mul(brodcast2, op2.rows[2].simd), simd_pack<T>::c_mul(brodcast3, op2.rows[3].simd));
+		auto a = brodcast0.c_mul(op2.rows[0].simd).add(brodcast1.c_mul(op2.rows[1].simd));
+		auto b = brodcast2.c_mul(op2.rows[2].simd).add(brodcast3.c_mul(op2.rows[3].simd));
 
-		result.rows[i].simd = simd_pack<T>::add(a, b);
+		result.rows[i].simd = a.add(b);
 	}
 	return result;
 }
@@ -241,7 +241,7 @@ public:
 
 
 
-using matrix4 = matrix<float, 4, 4>;
+using matrix4 = matrix<float, 4, 4, simd_enabled>;
 
 }
 }

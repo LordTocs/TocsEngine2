@@ -18,7 +18,7 @@ public:
 		: scale(1, 1, 1)
 	{}
 
-	matrix4 as_matrix() const;
+	matrix4 VECTORCALL as_matrix() const;
 
 	vector3 VECTORCALL transform_point(vector3 point) const;
 	vector3 VECTORCALL inv_transform_point(vector3 point) const;
