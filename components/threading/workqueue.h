@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <vector>
+#include <memory>
 
 namespace tocs {
 namespace threading {
@@ -15,10 +16,9 @@ class work_queue
 	std::unique_ptr<std::atomic<T>[]> work_array;
 	std::atomic<int> top;
 	std::atomic<int> bottom;
-
 public:
 
-	static_assert(std::atomic<T>::is_always_lock_free, "work queues only work on lock free types");
+	//static_assert(std::atomic<T>::is_always_lock_free, "work queues only work on lock free types");
 
 	work_queue(std::size_t max_work)
 		: max_work(max_work)
@@ -26,9 +26,29 @@ public:
 	{
 	}
 
+	work_queue(const work_queue &) = delete;
+	work_queue &operator=(const work_queue &) = delete;
+
+	work_queue(work_queue &&moveme) noexcept
+		: max_work(moveme.max_work)
+		, work_array(std::move(moveme.work_array))
+		, top(moveme.top.load())
+		, bottom(moveme.bottom.load())
+	{
+	}
+
+	work_queue &operator=(work_queue &&moveme) noexcept
+	{
+		max_work = moveme.max_work;
+		work_array = std::move(moveme.work_array);
+		top = moveme.top.load();
+		bottom = moveme.bottom.load();
+		return *this;
+	}
+
 	std::size_t get_max_work() const { return max_work; }
 
-	bool push(const T &item)
+	void push(const T &item)
 	{
 		int b = bottom;
 		work_array[b] = item;
@@ -39,23 +59,23 @@ public:
 	{
 		int b = bottom - 1;
 		bottom = b;
-
+		
 		int t = top;
 		if (t <= b)
 		{
-
+		
 			result = work_array[b];
 			if (t != b)
 			{
 				return true;
 			}
-
+		
 			bool success = true;
 			if (top.compare_exchange_strong(t, t + 1))
 			{
 				success = false;
 			}
-
+		
 			bottom = t + 1;
 			return success;
 		}

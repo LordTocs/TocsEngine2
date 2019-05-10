@@ -4,6 +4,13 @@
 namespace tocs {
 namespace threading {
 
+worker::~worker()
+{
+	job *junk_job = nullptr;
+	while (job_queue.pop(junk_job))
+	{ }
+}
+
 job *worker::pull_job()
 {
 	job *job_to_run = nullptr;
@@ -34,7 +41,7 @@ worker* worker::this_worker() { return thread_worker; }
 void worker::run()
 {
 	thread_worker = this;
-	while (true)
+	while (running)
 	{
 		job *j = pull_job();
 		if (j)
@@ -45,6 +52,38 @@ void worker::run()
 }
 
 
+job_system::job_system(std::size_t worker_count /* = std::thread::hardware_concurrency() */)
+	: worker_choosing_range(0, worker_count)
+{
+	workers.reserve(worker_count);
+	threads.reserve(worker_count - 1);
+
+	for (unsigned int i = 0; i < worker_count; ++i)
+	{
+		workers.emplace_back(*this, 100);
+		if (i != 0)
+		{
+			threads.emplace_back([w = &workers[i]]()
+			{
+				w->run();
+			});
+		}
+	}
+}
+
+
+job_system::~job_system()
+{
+	for (worker &w : workers)
+	{
+		w.stop_work();
+	}
+
+	for (std::thread &thread : threads)
+	{
+		thread.join();
+	}
+}
 
 }
 }

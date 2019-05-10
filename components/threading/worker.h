@@ -3,6 +3,7 @@
 #include "jobs.h"
 #include "pool.h"
 #include <random>
+#include <type_traits>
 
 namespace tocs {
 namespace threading {
@@ -14,7 +15,7 @@ class worker
 	detail::work_queue<job*> job_queue;
 	job_system *system;
 	std::mt19937 worker_chooser;
-
+	bool running;
 	cache_line_padding padding;
 
 	job *pull_job();
@@ -22,22 +23,30 @@ public:
 	worker(job_system &system, int maxwork)
 		: system(&system)
 		, job_queue(maxwork)
+		, running(true)
 	{
 	}
 
+	~worker();
+
+	worker(const worker &copyme) = delete;
+	worker &operator=(const worker &copyme) = delete;
+	
+	worker(worker &&moveme) = default;
+	worker &operator=(worker &&moveme) = default;
 
 	void run();
+	void stop_work() { running = false; }
 
 	static worker* this_worker();
 
 	template <class Func>
-	pool_ptr<job> queue_job(Func &&func)
-	{
-		pool_ptr<job> new_job = system->job_pool.get_item(std::forward<Func>(func));
-		job_queue.push(new_job);
-		return new_job;
-	}
+	threading::concurrent_pool_handle<job> queue_job(Func &&func);
 };
+
+static_assert(std::is_move_constructible<worker>::value, "Workers have to be move constructable");
+static_assert(std::is_move_assignable<worker>::value, "Workers have to be move assignable");
+
 
 class job_system
 {
@@ -48,21 +57,29 @@ class job_system
 public:
 	friend class worker;
 
-	job_system(std::size_t worker_count = std::thread::hardware_concurrency())
-		: workers(worker_count)
-		, worker_choosing_range(0, worker_count)
-	{
-		threads.reserve(workers.size() - 1);
-		for (int i = 0; i < threads.size(); ++i)
-		{
-			threads.emplace_back([worker=&workers[i], i]() 
-			{
-				worker->run();
-			});
-		}
-	}
+	job_system(std::size_t worker_count = std::thread::hardware_concurrency());
+	~job_system();
 
+	job_system(const job_system &) = default;
+	job_system &operator=(const job_system &) = default;
+
+	job_system(job_system &&) = default;
+	job_system &operator=(job_system &&) = default;
+
+	template <class Func>
+	static threading::concurrent_pool_handle<job> queue_job(Func &&func)
+	{
+		return worker::this_worker()->queue_job(std::forward<Func>(func));
+	}
 };
+
+template <class Func>
+threading::concurrent_pool_handle<job> worker::queue_job(Func &&func)
+{
+	auto new_job = system->job_pool.get_item(std::forward<Func>(func));
+	job_queue.push(new_job);
+	return new_job;
+}
 
 }
 }

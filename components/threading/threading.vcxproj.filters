@@ -30,6 +30,9 @@
     <ClInclude Include="pool.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="hashmap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="worker.cpp">

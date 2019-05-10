@@ -17,8 +17,8 @@ namespace detail
 	class simd_vector_compatible <T, dim, typename std::enable_if<is_simd_type<T>::value && (dim > 1 && dim < 4)>::type> : public std::true_type
 	{};
 
-	template <class T, int dim>
-	using enable_if_simd_vector = std::enable_if<simd_vector_compatible<T, dim>::value>;
+	template <class T, int dim, class type_override = void>
+	using enable_if_simd_vector = std::enable_if<simd_vector_compatible<T, dim>::value, type_override>;
 
 
 	//template <class T, class U, int dim>
@@ -27,37 +27,47 @@ namespace detail
 
 namespace detail
 {
-	template <class T, int Dim, class Enable=void>
+	template <class T, int dim, class Enable=void>
 	class default_simd_vector_toggle
 	{
 	public:
 		typedef simd_disabled type;
 	};
 
-	template <class T, int Dim>
-	class default_simd_vector_toggle<T, Dim, typename enable_if_simd_vector<T, Dim>>
+	template <class T, int dim>
+	class default_simd_vector_toggle<T, dim, typename enable_if_simd_vector<T, dim>>
 	{
 	public:
 		typedef simd_enabled type;
 	};
 }
 
-template <class T, int Dim, class Enable = simd_disabled>//typename detail::default_simd_vector_toggle<T, Dim>::type>
+template <class T, int dim, class Enable = simd_disabled>
 class vector_base
 {
-	T values[Dim];
+	T values[dim];
 public:
-
-	//T dot(vector_base<T, Dim, simd_enabled> b) const;
-	//typename to_real<T>::type length() const;
-	//T length_sq() const;
-	//vector_base<typename to_real<T>::type, Dim, simd_enabled> normalized() const;
 };
 
 //SIMD Specializations
 
+namespace detail 
+{
+
+template <class T, int dim>
+class vector_shared_simd_funcs
+{
+public:
+	T VECTORCALL dot(vector_base<T, dim, simd_enabled> b) const;
+	typename to_real<T>::type VECTORCALL length() const;
+	T VECTORCALL length_sq() const;
+	vector_base<typename to_real<T>::type, dim, simd_enabled> VECTORCALL normalized() const;
+};
+
+}
+
 template <class T>
-class vector_base<T, 4, simd_enabled>
+class vector_base<T, 4, simd_enabled> : public detail::vector_shared_simd_funcs<T, 4>
 {
 public:
 	union
@@ -82,13 +92,6 @@ public:
 	vector_base(vector_base<U, 4> copyme)
 		: simd(copyme.x, copyme.y, copyme.z, copyme.w)
 	{}
-
-	T VECTORCALL dot(vector_base<T, 4, simd_enabled> b) const;
-	typename to_real<T>::type length() const;
-	T length_sq() const;
-
-	vector_base<typename to_real<T>::type, 4, simd_enabled> normalized() const;
-
 private:
 	vector_base(detail::simd_pack<T> pack)
 		: simd(pack)
@@ -96,7 +99,7 @@ private:
 };
 
 template <class T>
-class vector_base<T, 3, simd_enabled>
+class vector_base<T, 3, simd_enabled> : public detail::vector_shared_simd_funcs<T, 3>
 {
 public:
 	union
@@ -135,11 +138,6 @@ public:
 		return ab.sub(cd);
 	}
 
-	T VECTORCALL dot(vector_base<T, 3, simd_enabled> b) const;
-	typename to_real<T>::type length() const;
-	T length_sq() const;
-	vector_base<typename to_real<T>::type, 3, simd_enabled> normalized() const;
-
 	static vector_base<T, 3, simd_enabled> forward;
 	static vector_base<T, 3, simd_enabled> up;
 	static vector_base<T, 3, simd_enabled> left;
@@ -157,7 +155,7 @@ template <class T>
 vector_base<T, 3, simd_enabled> vector_base<T, 3, simd_enabled>::left{ 1,0,0 };
 
 template <class T>
-class vector_base<T, 2, simd_enabled>
+class vector_base<T, 2, simd_enabled> : public detail::vector_shared_simd_funcs<T, 2>
 {
 public:
 	union
@@ -180,11 +178,6 @@ public:
 	vector_base(vector_base<U, 2> copyme)
 		: simd(copyme.x, copyme.y, 0, 0)
 	{}
-
-	T VECTORCALL dot(vector_base<T, 2> b) const;
-	typename to_real<T>::type length() const;
-	T length_sq() const;
-	vector_base<typename to_real<T>::type, 2> normalized() const;
 
 private:
 	vector_base(detail::simd_pack<T> pack)
@@ -210,11 +203,12 @@ vector_base<T, dim, simd_enabled> VECTORCALL operator- (vector_base<T, dim, simd
 
 //These have to run type promotion and preserve the if SIMD is enabled if possible.
 
+//TODO toggle SIMD based on type availability.
 template <class T, class U, int dim>
-vector_base<typename type_promotion<T, U>::type, dim, typename detail::default_simd_vector_toggle<typename type_promotion<T, U>::type, dim>::type> VECTORCALL operator* (vector_base<T, dim, simd_enabled> a, U b)
+vector_base<typename type_promotion<T, U>::type, dim, typename detail::enable_if_simd_vector<typename type_promotion<T, U>::type, dim, simd_enabled>::type> VECTORCALL operator* (vector_base<T, dim, simd_enabled> a, U b)
 {
 	typedef type_promotion<T, U>::type result_kernel_type;
-	typedef vector_base<result_kernel_type, dim> result_type;
+	typedef vector_base<result_kernel_type, dim, simd_enabled> result_type;
 
 	result_type v = a;
 
@@ -222,10 +216,10 @@ vector_base<typename type_promotion<T, U>::type, dim, typename detail::default_s
 }
 
 template <class T, class U, int dim>
-vector_base<typename type_promotion<T, U>::type, dim, typename detail::default_simd_vector_toggle<typename type_promotion<T, U>::type, dim>::type> VECTORCALL operator/ (vector_base<T, dim, simd_enabled> a, U b)
+vector_base<typename type_promotion<T, U>::type, dim, typename detail::enable_if_simd_vector<typename type_promotion<T, U>::type, dim, simd_enabled>::type> VECTORCALL operator/ (vector_base<T, dim, simd_enabled> a, U b)
 {
 	typedef type_promotion<T, U>::type result_kernel_type;
-	typedef vector_base<result_kernel_type, dim> result_type;
+	typedef vector_base<result_kernel_type, dim, simd_enabled> result_type;
 
 	result_type v = a;
 
@@ -233,31 +227,42 @@ vector_base<typename type_promotion<T, U>::type, dim, typename detail::default_s
 }
 
 
-//SIMD Member functions
+//SIMD Shared functions
+namespace detail {
+
 template <class T, int dim>
-T VECTORCALL vector_base<T, dim, simd_enabled>::dot(vector_base<T, dim, simd_enabled> rhs) const
+T VECTORCALL vector_shared_simd_funcs<T, dim>::dot(vector_base<T, dim, simd_enabled> rhs) const
 {
-	return simd.dot<(dim >= 1), (dim >= 2), (dim >= 3), (dim >= 4)>(rhs.simd).get<0>();
+	const vector_base<T, dim, simd_enabled> &this_vec = reinterpret_cast<const vector_base<T, dim, simd_enabled> &> (*this);
+
+	auto dotresult = this_vec.simd.dot<(dim >= 1), (dim >= 2), (dim >= 3), (dim >= 4)>(rhs.simd);
+
+	return dotresult.get<0>();
 }
 
 template <class T, int dim>
-T VECTORCALL vector_base<T, dim, simd_enabled>::length_sq() const
+T VECTORCALL vector_shared_simd_funcs<T, dim>::length_sq() const
 {
-	return dot(*this);
+	const vector_base<T, dim, simd_enabled> &this_vec = reinterpret_cast<const vector_base<T, dim, simd_enabled> &> (*this);
+
+	return dot(this_vec);
 }
 
 template <class T, int dim>
-typename to_real<T>::type VECTORCALL vector_base<T, dim, simd_enabled>::length() const
+typename to_real<T>::type VECTORCALL vector_shared_simd_funcs<T, dim>::length() const
 {
 	return std::sqrt(length_sq());
 }
 
 template <class T, int dim>
-vector_base<typename to_real<T>::type, dim> VECTORCALL vector_base<T, dim, simd_enabled>::normalized() const
+vector_base<typename to_real<T>::type, dim, simd_enabled> VECTORCALL vector_shared_simd_funcs<T, dim>::normalized() const
 {
-	return vector_base<to_real<T>::type, dim>(*this) / length();
+	const vector_base<T, dim, simd_enabled> &this_vec = reinterpret_cast<const vector_base<T, dim, simd_enabled> &> (*this);
+
+	return vector_base<to_real<T>::type, dim>(this_vec) / length();
 }
 
+}
 
 //Simd enabled 4 float vector.
 using vector4 = vector_base<float, 4, simd_enabled>;

@@ -36,37 +36,6 @@ using enable_if_simd_type = std::enable_if<is_simd_type<T>::value>;
 template <class T>
 class simd_pack
 {
-	inline static simd_pack<T> VECTORCALL add(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL h_add(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL sub(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL c_mul(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL c_div(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL c_less(simd_pack<T> a, simd_pack<T> b);
-
-	inline static simd_pack<T> VECTORCALL blend(simd_pack<T> a, simd_pack<T> b, simd_pack<T> mask);
-
-	template <int xi, int yi, int zi, int wi>
-	inline static simd_pack<T> VECTORCALL swizzle(simd_pack<T> a);
-
-	template <int xi, int yi, int zi, int wi>
-	inline static simd_pack<T> VECTORCALL shuffle(simd_pack<T> a, simd_pack<T> b);
-
-	template <unsigned int shufflebytes>
-	inline static simd_pack<T> VECTORCALL raw_shuffle(simd_pack<T> a, simd_pack<T> b);
-
-	template <int i>
-	inline static simd_pack<T> VECTORCALL set(simd_pack<T> a, T v);
-
-	template <int i>
-	inline static T VECTORCALL get(simd_pack<T> a);
-
-	template<bool xf, bool yf, bool zf, bool wf>
-	inline static simd_pack<T> VECTORCALL dot(simd_pack<T> a, simd_pack<T> b);
 };
 
 template <>
@@ -95,32 +64,32 @@ public:
 
 	}
 
-	inline simd_pack<float> VECTORCALL add(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL add(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_add_ps(pack, rhs.pack));
 	}
 
-	inline simd_pack<float> VECTORCALL h_add(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL h_add(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_hadd_ps(pack, rhs.pack));
 	}
 
-	inline simd_pack<float> VECTORCALL sub(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL sub(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_sub_ps(pack, rhs.pack));
 	}
 
-	inline simd_pack<float> VECTORCALL c_mul(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL c_mul(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_mul_ps(pack, rhs.pack));
 	}
 
-	inline simd_pack<float> VECTORCALL c_div(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL c_div(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_div_ps(pack, rhs.pack));
 	}
 
-	inline simd_pack<float> VECTORCALL c_less(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL c_less(simd_pack<float> rhs) const
 	{
 		return simd_pack<float>(_mm_cmplt_ps(pack, rhs.pack));
 	}
@@ -131,7 +100,7 @@ public:
 	}
 
 	template <int xi, int yi, int zi, int wi>
-	inline simd_pack<float> VECTORCALL swizzle()
+	inline simd_pack<float> VECTORCALL swizzle() const
 	{
 		return simd_pack<float>(_mm_shuffle_ps(pack, pack, _MM_SHUFFLE(xi, yi, zi, wi)));
 	}
@@ -149,28 +118,28 @@ public:
 	}
 
 	template <int i>
-	inline simd_pack<float> VECTORCALL set(float v)
+	inline simd_pack<float> VECTORCALL set(float v) const
 	{
 		//assume sse 4.1
 		return simd_pack<float>(_mm_insert_ps(pack, _mm_set_ss(v), i * 16));
 	}
 
 	template <int i>
-	inline float VECTORCALL get()
+	inline float VECTORCALL get() const
 	{
 		return _mm_cvtss_f32(swizzle<i, i, i, i>(pack));
 	}
 
 	template<>
-	inline static float VECTORCALL get<0>()
+	inline float VECTORCALL get<0>() const
 	{
 		return _mm_cvtss_f32(pack);
 	}
 
 	template<bool xf, bool yf, bool zf, bool wf>
-	inline simd_pack<float> VECTORCALL dot(simd_pack<float> rhs)
+	inline simd_pack<float> VECTORCALL dot(simd_pack<float> rhs) const
 	{
-		return _mm_dp_ps(pack, rhs.pack, xf * 0x11 | yf * 0x22 | zf * 0x33 | wf * 0x44);
+		return simd_pack<float>(_mm_dp_ps(pack, rhs.pack, xf * 0x11 | yf * 0x22 | zf * 0x33 | wf * 0x44));
 	}
 };
 

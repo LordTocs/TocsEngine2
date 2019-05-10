@@ -16,12 +16,9 @@ class job
 	std::atomic<int> remaining_subjobs;
 	std::function<void()> job_func;
 
-	//static constexpr int payload_size = 64;
-	//std::uint8_t payload_buffer[payload_size];
+	concurrent_pool_handle<job> pool_handle;
 
 	cache_line_padding padding;
-	
-
 public:
 
 	job()

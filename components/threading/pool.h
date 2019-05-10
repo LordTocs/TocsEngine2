@@ -2,6 +2,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include "core/asserts.h"
 namespace tocs {
 namespace threading {
 
@@ -19,15 +20,15 @@ namespace detail {
 		class free_list_node
 		{
 		public:
-			std::aligned_storage<T, alignof(T)>::type data;
+			typename std::aligned_storage<sizeof(T), alignof(T)>::type data;
 
 			std::atomic<std::uint32_t> refs;
 			std::atomic<free_list_node*> next;
 
 			bool constructed;
 
-			T &item() { return *static_cast<T*> (&data); }
-			const T &item() const { return *static_cast<T*> (&data); }
+			T &item() { return *reinterpret_cast<T*> (&data); }
+			const T &item() const { return *reinterpret_cast<T*> (&data); }
 
 			free_list_node()
 				: refs(0)
@@ -37,7 +38,6 @@ namespace detail {
 
 			~free_list_node()
 			{
-				storage
 				if (constructed)
 				{
 					item().~T();
@@ -99,7 +99,7 @@ namespace detail {
 					head_ptr = head.load(std::memory_order_acquire);
 					continue;
 				}
-				std::allocate_shared()
+				
 
 				// Good, reference count has been incremented (it wasn't at zero), which means
 				// we can read the next and not worry about it changing between now and the time
@@ -110,7 +110,7 @@ namespace detail {
 					// Yay, got the node. This means it was on the list, which means
 					// shouldBeOnFreeList must be false no matter the refcount (because
 					// nobody else knows it's been taken off yet, it can't have been put back on).
-					assert((head->refs.load(std::memory_order_relaxed) & SHOULD_BE_ON_FREELIST) == 0);
+					assert((head.load()->refs.load(std::memory_order_relaxed) & SHOULD_BE_ON_FREELIST) == 0);
 
 					// Decrease refcount twice, once for our ref, and once for the list's ref
 					head_ptr->refs.fetch_add(-2, std::memory_order_relaxed);
@@ -136,13 +136,15 @@ namespace detail {
 	class concurrent_pool_storage
 	{
 	public:
+		typedef typename detail::concurrent_free_list<T>::free_list_node node_type;
+
 		class node_page
 		{
 		public:
-			static const int max_node_count;
+			static constexpr int max_node_count = 1024;
 
 			std::atomic<std::uint32_t> used_node_count;
-			detail::concurrent_free_list<T>::free_list_node nodes[max_node_count];
+			node_type nodes[max_node_count];
 			std::atomic<node_page*> next_page;
 
 			node_page()
@@ -184,7 +186,7 @@ namespace detail {
 		}
 
 
-		detail::concurrent_free_list<T>::free_list_node *fetch_new_node()
+		node_type *fetch_new_node()
 		{
 			while (true)
 			{
@@ -195,9 +197,9 @@ namespace detail {
 					//We got the last node in the page so we alloc a new one for the next fetch.
 					node_page *new_page = new node_page();
 
-					detail::concurrent_free_list<T>::free_list_node* result_node = tail_page->nodes[node_slot];
+					node_type* result_node = &tail_page->nodes[node_slot];
 
-					tail_page.next_page = new_page;
+					tail_page->next_page = new_page;
 					tail_page = new_page;
 					++page_count;
 
@@ -222,14 +224,14 @@ class concurrent_pool_item_behaviour
 {
 public:
 	template <class... Args>
-	void on_fetch(T *data, bool &construction_state, Args... &&args)
+	void on_fetch(T *data, bool &construction_state, Args&&... args)
 	{
 		check(construction_state == false);
 		new (data) T(std::forward<Args>(args)...);
 		construction_state = true;
 	}
 
-	void on_return(T *data, , bool &construction_state)
+	void on_return(T *data, bool &construction_state)
 	{
 		check(construction_state == true);
 		data->~T();
@@ -239,25 +241,64 @@ public:
 
 
 template <class T>
-using pool_ptr = std::shared_ptr<T>;
+class concurrent_pool_handle
+{
+public:
+	typedef typename detail::concurrent_free_list<T>::free_list_node node_type;
+private:
+	node_type* node;
+public:
+	template <class PT, class PB>
+	friend class concurrent_pool;
+
+	concurrent_pool_handle()
+		: node(nullptr)
+	{}
+
+	concurrent_pool_handle(node_type* node)
+		: node(node)
+	{}
+
+	T *operator->()
+	{
+		return &node->item();
+	}
+
+	T *operator->() const
+	{
+		return &node->item();
+	}
+
+	T &operator*()
+	{
+		return node->item();
+	}
+
+	T &operator*() const
+	{
+		return node->item();
+	}
+};
 
 template <class T, class ItemBehaviour = concurrent_pool_item_behaviour<T>>
 class concurrent_pool
 {
 	void alloc_node()
 	{
-		free_list.add_node(*item_storage.fetch_new_node());
+		free_list.add_node(item_storage.fetch_new_node());
 	}
 
 	ItemBehaviour item_behaviour;
 	detail::concurrent_free_list<T> free_list;
 	detail::concurrent_pool_storage<T> item_storage;
+	
 public:
+	typedef typename detail::concurrent_free_list<T>::free_list_node node_type;
 
 	template<class... Args>
-	shared_ptr<T> get_item(Args... &&args)
+	concurrent_pool_handle<T> get_item(Args &&... args)
 	{
-		free_list_node *new_item = nullptr;
+		node_type *new_item = nullptr;
 		while ((new_item = free_list.try_get()) == nullptr)
 		{
 			alloc_node();
@@ -268,11 +309,13 @@ public:
 
 		item_behaviour.on_fetch(&new_item->item(), new_item->constructed, std::forward<Args>(args)...);
 
-		return std::shared_ptr<T> {&new_item->item(), [this, new_item](T*)
-		{ 
-			this->item_behaviour.on_return(&new_item->item(), new_item->constructed);
-			this->add_node(new_item);  
-		}};
+		return concurrent_pool_handle<T> { new_item };
+	}
+
+	void return_item(concurrent_pool_handle<T> handle)
+	{
+		item_behaviour.on_return(&handle.node->item(), handle.node->constructed);
+		add_node(handle.node);
 	}
 };
 

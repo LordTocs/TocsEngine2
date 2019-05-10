@@ -1,4 +1,5 @@
 #include "jobs.h"
+#include "core/asserts.h"
 
 namespace tocs {
 namespace threading {
@@ -7,6 +8,7 @@ static thread_local job* thread_job;
 
 void job::run()
 {
+	check(thread_job == nullptr);
 	thread_job = this;
 	job_func();
 	thread_job = nullptr;
