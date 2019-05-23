@@ -4,6 +4,7 @@
 #include "gametime.h"
 #include <threading/pool.h>
 #include <core/asserts.h>
+#include <core/static_storage.h>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
@@ -20,10 +21,10 @@ class component_mapping
 {
 	//Todo, can we do map access lockelessly?
 	std::shared_mutex map_mutex;
-	std::unordered_map<game_object_id, threading::concurrent_pool_handle<game_object>> obj_to_comp;
+	std::unordered_map<game_object_id, threading::concurrent_pool_handle<comp_type>> obj_to_comp;
 public:
 
-	void match_allocations(const component_mapping<comp_type> &other_mapping)
+	void match_allocations(const component_mapping<comp_type> &other_mapping, threading::concurrent_pool<comp_type> &component_pool)
 	{
 		std::unique_lock lock(map_mutex);
 
@@ -34,7 +35,7 @@ public:
 			if (i == obj_to_comp.end())
 			{
 				//An object got created, match it
-				obj_to_comp.insert(std::make_pair(m.first, comp_type::manager.alloc_component(m.first)));
+				obj_to_comp.insert(std::make_pair(m.first, component_pool.get_item(m.first)));
 			}
 		}
 
@@ -45,9 +46,19 @@ public:
 			if (i == other_mapping.obj_to_comp.end())
 			{
 				//An object got deleted, match it
+				component_pool.return_item(m.second);
 				obj_to_comp.erase(m.first);
 			}
 		}
+	}
+
+	void assign(game_object_id id, threading::concurrent_pool_handle<comp_type> comp)
+	{
+		std::unique_lock lock(map_mutex);
+
+		check(obj_to_comp.find(id) == obj_to_comp.end());
+
+		obj_to_comp.emplace(std::make_pair(id, comp));
 	}
 };
 
@@ -75,14 +86,16 @@ public:
 
 		check(prev_storage != nullptr);
 		//Setup the next frame by matching any existing components to the prev frame, avoiding new allocations if we don't need it.
-		mapping.match_allocations(prev_storage->mapping);
+		mapping.match_allocations(prev_storage->mapping, storage);
 	}
 
 private:
 
 	threading::concurrent_pool_handle<comp_type> alloc_component(game_object_id id)
 	{
-		return storage.get_item(nullptr);
+		auto comp = storage.get_item(id);
+		mapping.assign(id, comp);
+		return comp;
 	}
 
 	static base_component_storage *factory_func()
@@ -94,18 +107,18 @@ private:
 class all_component_storage
 {
 	std::unordered_map<std::type_index, std::unique_ptr<base_component_storage>> component_storages;
-	static std::vector<std::pair<std::type_index, std::function<base_component_storage *()>>> storage_factories;
+	static core::static_storage<std::vector<std::pair<std::type_index, std::function<base_component_storage *()>>>> storage_factories;
 
 	template <class comp_type>
 	static void init_factory()
 	{
-		storage_factories.emplace_back(std::make_pair(std::type_index(typeid(comp_type)), component_storage<comp_type>::factory_func));
+		storage_factories->emplace_back(std::make_pair(std::type_index(typeid(comp_type)), component_storage<comp_type>::factory_func));
 	}
 
 public:
 	all_component_storage()
 	{
-		for (auto fp : storage_factories)
+		for (auto fp : *storage_factories)
 		{
 			component_storages.emplace(fp.first, fp.second());
 		}

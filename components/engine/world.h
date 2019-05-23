@@ -63,6 +63,12 @@ public:
 		return handle->get_id();
 	}
 
+	template <class T>
+	void add_component(game_object_id id)
+	{
+
+	}
+
 	void advance_frame()
 	{
 		timer.advance_frame();

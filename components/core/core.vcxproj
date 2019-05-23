@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClInclude Include="asserts.h" />
     <ClInclude Include="freelist.h" />
+    <ClInclude Include="static_storage.h" />
     <ClInclude Include="type_promotion.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
